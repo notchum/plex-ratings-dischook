@@ -1,0 +1,8 @@
+# Python caches
+__pycache__/
+
+# Project Settings
+.vscode/
+
+# git
+.git/
