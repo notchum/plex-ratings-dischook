@@ -8,7 +8,9 @@ an embed send user ratings as they happen is a great way to keep up with what
 other users think of certain movies/shows and get conversation started!
 
 ## Building Docker Image
-docker build -t plex-ratings-dischook:0.0.1 .
+```sh
+$ cd plex-ratings-dischook && docker build -t plex-ratings-dischook:0.0.1 .
+```
 
 ## Usage
 ```sh
