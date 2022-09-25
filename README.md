@@ -13,11 +13,15 @@ $ cd plex-ratings-dischook && docker build -t plex-ratings-dischook:0.0.1 .
 ```
 
 ## Usage
+First, you have to pick a port for the Flask App to run on. I am using port `3000` in the 
+command below:
+
 ```sh
 docker create \
   --name=plex-ratings-dischook \
   -e PGID=<gid> -e PUID=<uid> \
   -e TZ=<timezone> \
+  -e FLASK_RUN_PORT=3000 \
   -e IMGUR_CLIENT_ID=<imgur_client_id> \
   -e DISCORD_WEBHOOK=<webhook_url> \
   -e PLEX_HOSTNAME_PORT=<hostname:port> \ /* (i.e. http://172.0.0.1:32400) */
