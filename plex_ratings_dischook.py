@@ -2,6 +2,7 @@ import os
 import json
 import queue
 import base64
+import logging
 import requests
 import threading
 from typing import Dict
@@ -12,6 +13,7 @@ from ratelimit import limits
 from dotenv import load_dotenv
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 poster_delete_hash = None
@@ -42,13 +44,13 @@ def upload_to_imgur(img_data, img_title='', rating_key='', fallback=''):
     response = requests.post('https://api.imgur.com/3/image', headers=headers, data=data)
 
     if (response and response.status_code == 200):
-        print(f"DEBUG :: Image '{img_title}' ({fallback}) uploaded to Imgur.")
+        logging.debug(f"Image '{img_title}' ({fallback}) uploaded to Imgur.")
         imgur_response_data = response.json().get('data')
         img_url = imgur_response_data.get('link', '').replace('http://', 'https://')
         delete_hash = imgur_response_data.get('deletehash', '')
     else:
-        print(f"ERROR :: Unable to upload image '{img_title}' ({fallback}) to Imgur.")
-        print(f"ERROR :: Request response: {response.status_code} {response.reason}")
+        logging.error(f"Unable to upload image '{img_title}' ({fallback}) to Imgur.")
+        logging.error(f"Request response: {response.status_code} {response.reason}")
 
     return img_url, delete_hash
 
@@ -60,15 +62,16 @@ def delete_from_imgur(delete_hash, img_title='', fallback=''):
     response = requests.delete(f"https://api.imgur.com/3/image/{delete_hash}", headers=headers)
 
     if (response and response.status_code == 200):
-        print(f"DEBUG :: Image '{img_title}' ({fallback}) deleted from Imgur.")
+        logging.debug(f"Image '{img_title}' ({fallback}) deleted from Imgur.")
         return True
     else:
-        print(f"ERROR :: Unable to delete image '{img_title}' ({fallback}) from Imgur.")
-        print(f"ERROR :: Request response: {response.status_code} {response.reason}")
+        logging.error(f"Unable to delete image '{img_title}' ({fallback}) from Imgur.")
+        logging.error(f"Request response: {response.status_code} {response.reason}")
         return False
 
 
 def send_rating(key):
+    logging.info(f"Sending rating for '{key}' to Discord")
     with lock:
         payload = rating_buffers[key].get()
         data = process_for_discord(payload)
@@ -113,7 +116,7 @@ def process_for_discord(payload) -> dict:
     elif (payload.Metadata.librarySectionType == "movie"):
         media_db_url = f"[IMDb](https://www.imdb.com/title/{payload.Metadata.Guid[IMDB_GUID_INX].id.split('//')[-1]})"
     else:
-        print(f"ERROR :: {payload.Metadata.librarySectionType} is not handled!")
+        logging.error(f"{payload.Metadata.librarySectionType} is not handled!")
 
     # Correct 0 ratings
     if (payload.rating < 0):
@@ -173,7 +176,7 @@ def send_to_discord(data: dict) -> requests.Response:
 def get_plex_webhook():
     if (request.method == 'POST'):
         payload = attrdict(json.loads(request.values['payload']))
-        print(f"Got webhook for {payload.event}")
+        logging.info(f"Got webhook for {payload.event}")
         
         # If the event is a rating
         if (payload.event == "media.rate"):
