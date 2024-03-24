@@ -160,7 +160,7 @@ def process_for_discord(payload) -> dict:
 
 
 @limits(calls=LIMIT_CALLS, period=LIMIT_PERIOD)
-def send_to_discord(data: dict) -> requests.Response:
+def send_to_discord(data: dict):
     response = requests.post(
         url=os.environ['DISCORD_WEBHOOK'],
         data=json.dumps(data),
@@ -168,8 +168,8 @@ def send_to_discord(data: dict) -> requests.Response:
     )
 
     if (response.status_code not in [200, 204]):
-        raise Exception(f"API response: {response.status_code}")
-    return response
+        logging.error(f"Discord API failed: {response.status_code} - {response.reason}")
+    logging.info(f"Discord API response: {response.status_code} - {response.reason}")
 
 
 @app.route('/plex', methods=['POST'])
