@@ -1,13 +1,25 @@
 import os
 import json
+import queue
 import base64
 import requests
+import threading
+from typing import Dict
 from datetime import datetime, timezone
+
 from flask import Flask, request, abort
-from ratelimit import limits, sleep_and_retry
+from ratelimit import limits
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 poster_delete_hash = None
+lock = threading.Lock()
+rating_buffers: Dict[str, queue.LifoQueue] = {}
+
+TIMER_PERIOD = 10
+QUEUE_MAX_SIZE = 5
 
 LIMIT_CALLS = 5
 LIMIT_PERIOD = 60 * LIMIT_CALLS
@@ -56,8 +68,96 @@ def delete_from_imgur(delete_hash, img_title='', fallback=''):
         return False
 
 
+def send_rating(key):
+    with lock:
+        payload = rating_buffers[key].get()
+        data = process_for_discord(payload)
+        send_to_discord(data)
+        del rating_buffers[key]
+
+
+def process_for_discord(payload) -> dict:
+    # Get Poster
+    if ('grandparentThumb' in payload.Metadata):
+        img_split = payload.Metadata.grandparentThumb.split('/')
+    elif ('parentThumb' in payload.Metadata):
+        img_split = payload.Metadata.parentThumb.split('/')
+    else:
+        img_split = payload.Metadata.thumb.split('/')
+    if (img_split[-1].isdigit()):
+        img = '/'.join(img_split[:-1])
+    rating_key = img_split[3]
+    img = f"{img.rstrip('/')}/{int(datetime.now().timestamp())}"
+    url = os.environ['PLEX_HOSTNAME_PORT'] + img + "?X-Plex-Token=" + os.environ['X_PLEX_TOKEN']
+    result = requests.get(url=url)
+
+    # Delete last poster image
+    global poster_delete_hash
+    if (poster_delete_hash):
+        delete_from_imgur(delete_hash=poster_delete_hash)
+    
+    # Upload poster image
+    if (result.status_code == 200):
+        poster_url, poster_delete_hash = upload_to_imgur(img_data=result.content, rating_key=rating_key)
+
+    # Configure the Title
+    if (payload.Metadata.librarySectionType == "show"):
+        if ('Guid' in payload.Metadata):
+            media_db_url = f"[TheTVDB](https://thetvdb.com/?tab=series&id={payload.Metadata.Guid[TVDB_GUID_INX].id.split('//')[-1]})"
+        else:
+            media_db_url = f"[TheTVDB](https://thetvdb.com/?tab=series&id={payload.Metadata.guid.split('//')[-1].split('?')[0].split('/')[0].split('-')[-1]})"
+        if (payload.Metadata.type == "episode"):
+            payload.Metadata.title = f"{payload.Metadata.grandparentTitle} - {payload.Metadata.title} (S{payload.Metadata.parentIndex} · E{payload.Metadata.index})"
+        elif (payload.Metadata.type == "season"):
+            payload.Metadata.title = f"{payload.Metadata.parentTitle} - {payload.Metadata.title}"
+    elif (payload.Metadata.librarySectionType == "movie"):
+        media_db_url = f"[IMDb](https://www.imdb.com/title/{payload.Metadata.Guid[IMDB_GUID_INX].id.split('//')[-1]})"
+    else:
+        print(f"ERROR :: {payload.Metadata.librarySectionType} is not handled!")
+
+    # Correct 0 ratings
+    if (payload.rating < 0):
+        payload.rating = 0
+
+    return {
+        'embeds': [
+            {
+                "title": f"{payload.Account.title} rated {payload.Metadata.title}!",
+                "fields": [
+                    {
+                        "name": "Description",
+                        "value": payload.Metadata.summary if payload.Metadata.summary else "N/A"
+                    },
+                    {
+                        "name": "Rating",
+                        "value": f"{int(payload.rating)}/10",
+                        "inline": True
+                    },
+                    {
+                        "name": "Audience Rating",
+                        "value": f"{payload.Metadata.audienceRating}/10" if 'audienceRating' in payload.Metadata else "N/A",
+                        "inline": True
+                    },
+                    {
+                        "name": "View Details",
+                        "value": media_db_url,
+                        "inline": True
+                    }
+                ],
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:00.000Z"),
+                "image": {
+                    "url": poster_url
+                },
+                "thumbnail": {
+                    "url": payload.Account.thumb
+                }
+            }
+        ]
+    }
+
+
 @limits(calls=LIMIT_CALLS, period=LIMIT_PERIOD)
-def send_to_discord(data: dict):
+def send_to_discord(data: dict) -> requests.Response:
     response = requests.post(
         url=os.environ['DISCORD_WEBHOOK'],
         data=json.dumps(data),
@@ -70,92 +170,24 @@ def send_to_discord(data: dict):
 
 
 @app.route('/plex', methods=['POST'])
-def get_webhook():
+def get_plex_webhook():
     if (request.method == 'POST'):
         payload = attrdict(json.loads(request.values['payload']))
         print(f"Got webhook for {payload.event}")
         
         # If the event is a rating
         if (payload.event == "media.rate"):
-            # Get Poster
-            if ('grandparentThumb' in payload.Metadata):
-                img_split = payload.Metadata.grandparentThumb.split('/')
-            elif ('parentThumb' in payload.Metadata):
-                img_split = payload.Metadata.parentThumb.split('/')
-            else:
-                img_split = payload.Metadata.thumb.split('/')
-            if (img_split[-1].isdigit()):
-                img = '/'.join(img_split[:-1])
-            rating_key = img_split[3]
-            img = f"{img.rstrip('/')}/{int(datetime.now().timestamp())}"
-            url = os.environ['PLEX_HOSTNAME_PORT'] + img + "?X-Plex-Token=" + os.environ['X_PLEX_TOKEN']
-            result = requests.get(url=url)
-
-            # Delete last poster image
-            global poster_delete_hash
-            if (poster_delete_hash):
-                delete_from_imgur(delete_hash=poster_delete_hash)
-            
-            # Upload poster image
-            if (result.status_code == 200):
-                poster_url, poster_delete_hash = upload_to_imgur(img_data=result.content, rating_key=rating_key)
-
-            # Configure the Title
-            if (payload.Metadata.librarySectionType == "show"):
-                if ('Guid' in payload.Metadata):
-                    media_db_url = f"[TheTVDB](https://thetvdb.com/?tab=series&id={payload.Metadata.Guid[TVDB_GUID_INX].id.split('//')[-1]})"
+            with lock:
+                key = f"{payload.Account.title}:{payload.Metadata.title}"
+                if key not in rating_buffers:
+                    rating_buffers[key] = queue.LifoQueue(maxsize=QUEUE_MAX_SIZE)
+                    rating_buffers[key].put(payload)
+                    threading.Timer(TIMER_PERIOD, send_rating, [key]).start()
+                elif rating_buffers[key].qsize() < QUEUE_MAX_SIZE:
+                    rating_buffers[key].put(payload)
                 else:
-                    media_db_url = f"[TheTVDB](https://thetvdb.com/?tab=series&id={payload.Metadata.guid.split('//')[-1].split('?')[0].split('/')[0].split('-')[-1]})"
-                if (payload.Metadata.type == "episode"):
-                    payload.Metadata.title = f"{payload.Metadata.grandparentTitle} - {payload.Metadata.title} (S{payload.Metadata.parentIndex} · E{payload.Metadata.index})"
-                elif (payload.Metadata.type == "season"):
-                    payload.Metadata.title = f"{payload.Metadata.parentTitle} - {payload.Metadata.title}"
-            elif (payload.Metadata.librarySectionType == "movie"):
-                media_db_url = f"[IMDb](https://www.imdb.com/title/{payload.Metadata.Guid[IMDB_GUID_INX].id.split('//')[-1]})"
-            else:
-                print(f"ERROR :: {payload.Metadata.librarySectionType} is not handled!")
+                    pass
 
-            # Correct 0 ratings
-            if (payload.rating < 0):
-                payload.rating = 0
-
-            data = {
-                'embeds': [
-                    {
-                        "title": f"{payload.Account.title} rated {payload.Metadata.title}!",
-                        "fields": [
-                            {
-                                "name": "Description",
-                                "value": payload.Metadata.summary if payload.Metadata.summary else "N/A"
-                            },
-                            {
-                                "name": "Rating",
-                                "value": f"{int(payload.rating)}/10",
-                                "inline": True
-                            },
-                            {
-                                "name": "Audience Rating",
-                                "value": f"{payload.Metadata.audienceRating}/10" if 'audienceRating' in payload.Metadata else "N/A",
-                                "inline": True
-                            },
-                            {
-                                "name": "View Details",
-                                "value": media_db_url,
-                                "inline": True
-                            }
-                        ],
-                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:00.000Z"),
-                        "image": {
-                            "url": poster_url
-                        },
-                        "thumbnail": {
-                            "url": payload.Account.thumb
-                        }
-                    }
-                ]
-            }
-
-            _ = send_to_discord(data)
         return 'Success!', 200
     else:
         abort(400)
