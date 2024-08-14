@@ -3,11 +3,11 @@ import json
 import queue
 import base64
 import logging
-import requests
 import threading
 from typing import Dict
 from datetime import datetime, timezone
 
+import requests
 from flask import Flask, request, abort
 from ratelimit import limits
 from dotenv import load_dotenv
