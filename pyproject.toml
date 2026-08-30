@@ -1,7 +1,7 @@
 [project]
 name = "plex-ratings-dischook"
 version = "0.1.0"
-description = "Add your description here"
+description = "A web app to take Plex webhook requests that contain media rating events and activate a Discord webhook notification."
 readme = "README.md"
 authors = [
     { name = "notchum", email = "github@chum.mozmail.com" }
@@ -13,10 +13,3 @@ dependencies = [
     "ratelimit>=2.2.1",
     "requests>=2.34.2",
 ]
-
-[project.scripts]
-plex-ratings-dischook = "plex_ratings_dischook:main"
-
-[build-system]
-requires = ["uv_build>=0.12.1,<0.13.0"]
-build-backend = "uv_build"
