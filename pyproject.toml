@@ -1,0 +1,22 @@
+[project]
+name = "plex-ratings-dischook"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "notchum", email = "github@chum.mozmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "flask>=3.1.3",
+    "python-dotenv>=1.2.3",
+    "ratelimit>=2.2.1",
+    "requests>=2.34.2",
+]
+
+[project.scripts]
+plex-ratings-dischook = "plex_ratings_dischook:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"

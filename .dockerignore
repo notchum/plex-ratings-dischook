@@ -1,8 +1,23 @@
-# Python caches
-__pycache__/
+# Logs
+logs/
 
-# Project Settings
+# Launch settings
 .vscode/
 
-# git
+# git-related and cache folders
 .git/
+.git
+.github/
+.cache
+
+# Markdown and class files
+*.md
+**/*.class
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
