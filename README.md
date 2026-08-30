@@ -7,15 +7,9 @@ Since I already have a Discord #plex channel webhook for PMS updates, having
 an embed send user ratings as they happen is a great way to keep up with what
 other users think of certain movies/shows and get conversation started!
 
-## Building Docker Image
-```sh
-$ cd plex-ratings-dischook && docker build -t plex-ratings-dischook:0.0.1 .
-```
+<img width="617" height="603" alt="image" src="https://github.com/user-attachments/assets/58f5fd6e-f66e-44d2-82b1-df28738de7d0" />
 
 ## Usage
-First, you have to pick a port for the Flask App to run on. I am using port `3000` in the 
-command below:
-
 ```sh
 docker create \
   --name=plex-ratings-dischook \
@@ -27,5 +21,5 @@ docker create \
   -e PLEX_HOSTNAME_PORT=<hostname:port> \ /* (i.e. http://172.0.0.1:32400) */
   -e X_PLEX_TOKEN=<xplextoken> \
   -p 3000:3000 \
-  plex-ratings-dischook:0.0.1
+  ghcr.io/notchum/plex-ratings-dischook:main
 ```
